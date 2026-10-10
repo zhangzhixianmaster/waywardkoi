@@ -1,0 +1,13 @@
+{
+  "_comment": "管理员CRUD + 认证策略 + TOTP 管理路由",
+  "routes": [
+    { "action": "create",  "library": "/lib/work_lib/libadmin.so", "function": "admin_create",  "_note": "新建管理员" },
+    { "action": "read",    "library": "/lib/work_lib/libadmin.so", "function": "admin_read",    "_note": "查询管理员列表" },
+    { "action": "admin_get","library": "/lib/work_lib/libadmin.so", "function": "admin_get",    "_note": "获取单个管理员详情" },
+    { "action": "update",  "library": "/lib/work_lib/libadmin.so", "function": "admin_update",  "_note": "更新管理员" },
+    { "action": "delete",  "library": "/lib/work_lib/libadmin.so", "function": "admin_delete",  "_note": "删除管理员" },
+    { "action": "update_auth_policy", "library": "/lib/work_lib/libadmin.so", "function": "admin_update_auth_policy", "_note": "更新认证策略" },
+    { "action": "totp_generate", "library": "/lib/work_lib/libadmin.so", "function": "admin_totp_generate", "_note": "生成TOTP密钥" },
+    { "action": "log_query", "library": "/lib/work_lib/libadmin.so", "function": "admin_log_query", "_note": "操作日志查询" }
+  ]
+}

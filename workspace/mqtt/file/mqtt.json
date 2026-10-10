@@ -1,0 +1,83 @@
+{
+  "_comment": "MQTT 设备管理路由（由 configd API 网关加载，插件: libmqtt_config.so）",
+  "routes": [
+    {
+      "action": "device_auth",
+      "library": "/lib/work_lib/libmqtt_config.so",
+      "function": "device_auth",
+      "_note": "设备授权认证 - 请求: {address,data_types:[],dev_uuid} 响应: {code,message}"
+    },
+    {
+      "action": "cloud_connect",
+      "library": "/lib/work_lib/libmqtt_config.so",
+      "function": "cloud_connect",
+      "_note": "云端连接 MQTT Broker - 请求: {} 响应: {code,message}"
+    },
+    {
+      "action": "cloud_disconnect",
+      "library": "/lib/work_lib/libmqtt_config.so",
+      "function": "cloud_disconnect",
+      "_note": "云端断开 MQTT 连接 - 请求: {} 响应: {code,message}"
+    },
+    {
+      "action": "get_auth_devices",
+      "library": "/lib/work_lib/libmqtt_config.so",
+      "function": "get_auth_devices",
+      "_note": "获取已授权设备列表 - 请求: {} 响应: {code,message,data:{devices:[{dev_uuid,channel,data_types,last_seen}]}}"
+    },
+    {
+      "action": "get_device_detail",
+      "library": "/lib/work_lib/libmqtt_config.so",
+      "function": "get_device_detail",
+      "_note": "获取单个设备详情(硬件/网络/流量图表) - 请求: {dev_uuid} 响应: {code,message,data:{...}}"
+    },
+    {
+      "action": "get_config",
+      "library": "/lib/work_lib/libmqtt_config.so",
+      "function": "get_config",
+      "_note": "获取 MQTT 配置 - 请求: {} 响应: {code,message,data:{address,tls_version,use_cert_auth,...}}"
+    },
+    {
+      "action": "save_mqtt_address",
+      "library": "/lib/work_lib/libmqtt_config.so",
+      "function": "save_mqtt_address",
+      "_note": "保存 MQTT Broker 地址 - 请求: {address} 响应: {code,message}"
+    },
+    {
+      "action": "get_mqtt_address",
+      "library": "/lib/work_lib/libmqtt_config.so",
+      "function": "get_mqtt_address",
+      "_note": "获取 MQTT Broker 地址 - 请求: {} 响应: {code,message,data:{address}}"
+    },
+    {
+      "action": "get_uuid",
+      "library": "/lib/work_lib/libmqtt_config.so",
+      "function": "get_uuid",
+      "_note": "获取设备唯一标识 - 请求: {} 响应: {code,message,data:{uuid}}"
+    },
+    {
+      "action": "device_test",
+      "library": "/lib/work_lib/libmqtt_config.so",
+      "function": "device_test",
+      "_note": "连通性测试(端到端MQTT通路) - 请求: {address?,dev_uuid?} 响应: {code,message,data:{passed,msg}}"
+    },
+    {
+      "action": "save_client_state",
+      "library": "/lib/work_lib/libmqtt_config.so",
+      "function": "save_client_state",
+      "_note": "保存设备端配置状态 - 请求: {dev_uuid,values:{...}} 响应: {code,message}"
+    },
+    {
+      "action": "get_client_state",
+      "library": "/lib/work_lib/libmqtt_config.so",
+      "function": "get_client_state",
+      "_note": "获取设备端配置状态 - 请求: {} 响应: {code,message,data:{client_state}}"
+    },
+    {
+      "action": "device_stop",
+      "library": "/lib/work_lib/libmqtt_config.so",
+      "function": "device_stop",
+      "_note": "停止设备运行 - 请求: {dev_uuid} 响应: {code,message}"
+    }
+  ]
+}

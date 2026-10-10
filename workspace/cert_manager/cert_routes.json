@@ -1,0 +1,14 @@
+{
+  "_comment": "证书管理路由（由 configd 加载，插件: libcert_manager.so）",
+  "routes": [
+    { "action": "list_certs",          "library": "/lib/work_lib/libcert_manager.so", "function": "list_certs",          "_note": "证书列表(分页+搜索)" },
+    { "action": "get_available_certs",  "library": "/lib/work_lib/libcert_manager.so", "function": "get_available_certs",  "_note": "可绑定证书列表(管理员下拉框)" },
+    { "action": "create_cert",         "library": "/lib/work_lib/libcert_manager.so", "function": "create_cert",         "_note": "申请证书" },
+    { "action": "get_cert_detail",     "library": "/lib/work_lib/libcert_manager.so", "function": "get_cert_detail",     "_note": "证书详情" },
+    { "action": "download_cert",       "library": "/lib/work_lib/libcert_manager.so", "function": "download_cert",       "_note": "下载证书(PEM/P12)" },
+    { "action": "revoke_cert",         "library": "/lib/work_lib/libcert_manager.so", "function": "revoke_cert",         "_note": "吊销证书" },
+    { "action": "delete_cert",         "library": "/lib/work_lib/libcert_manager.so", "function": "delete_cert",         "_note": "删除证书" },
+    { "action": "resend_cert_email",   "library": "/lib/work_lib/libcert_manager.so", "function": "resend_cert_email",   "_note": "重发证书邮件" },
+    { "action": "cert_init_root",      "library": "/lib/work_lib/libcert_manager.so", "function": "cert_init",           "_note": "根证书初始化" }
+  ]
+}

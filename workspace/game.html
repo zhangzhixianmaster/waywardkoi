@@ -1,0 +1,1197 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>武侠格斗</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0f0e1a;display:flex;justify-content:center;align-items:center;min-height:100vh;font-family:'华文楷体',sans-serif}
+.game-wrapper{background:rgba(26,25,50,0.85);border-radius:16px;padding:12px;border:1px solid rgba(200,180,120,0.2);box-shadow:0 0 60px rgba(0,0,0,0.8)}
+.game-container{background:rgba(21,20,42,0.6);border-radius:10px;padding:10px;backdrop-filter:blur(4px)}
+.header{display:flex;justify-content:space-between;align-items:center;padding:0 4px 8px 4px;color:#d4c8a0;font-weight:600;flex-wrap:wrap;gap:4px}
+.game-title{font-size:18px;background:linear-gradient(135deg,#f0d060,#f0e080);-webkit-background-clip:text;-webkit-text-fill-color:transparent;text-shadow:0 0 20px rgba(240,200,80,0.3)}
+.score-display{display:flex;gap:10px;font-size:13px;background:rgba(0,0,0,0.4);padding:2px 12px;border-radius:20px;border:1px solid rgba(200,180,120,0.15)}
+.score-display span{color:#b0a888}
+.score-val{color:#f0e8a0;font-weight:700;min-width:16px;display:inline-block;text-align:center}
+canvas{display:block;width:100%;max-width:900px;height:auto;aspect-ratio:900/500;border-radius:8px;background:transparent;touch-action:none;cursor:pointer;outline:none}
+.controls{display:flex;justify-content:space-between;align-items:center;padding:8px 4px 0 4px;flex-wrap:wrap;gap:4px}
+.key-hints{display:flex;gap:4px;flex-wrap:wrap;color:#b0a888;font-size:12px;font-weight:500}
+.key-hint{display:flex;align-items:center;gap:2px;background:rgba(255,255,255,0.04);padding:1px 6px;border-radius:16px;border:1px solid rgba(255,255,255,0.06)}
+.key-hint .key{background:rgba(255,255,255,0.08);color:#e8e0ff;font-weight:700;font-size:11px;padding:0 4px;border-radius:3px;line-height:18px;min-width:18px;text-align:center;border:1px solid rgba(255,255,255,0.08)}
+.key-hint .key.special{background:rgba(240,200,80,0.15);border-color:rgba(240,200,80,0.2);color:#f0d880}
+.key-hint .key.def{background:rgba(80,200,255,0.15);border-color:rgba(80,200,255,0.2);color:#80d0ff}
+.key-hint .key.ulti{background:rgba(255,80,200,0.15);border-color:rgba(255,80,200,0.2);color:#ff80d0}
+.key-hint .key.tele{background:rgba(255,200,80,0.15);border-color:rgba(255,200,80,0.2);color:#ffcc44}
+.status-msg{color:#b0a888;font-size:13px;background:rgba(0,0,0,0.4);padding:2px 14px;border-radius:20px;border:1px solid rgba(200,180,120,0.1);text-align:center;min-width:80px}
+.btn-restart{background:rgba(255,255,255,0.06);border:1px solid rgba(200,180,120,0.15);color:#b0a888;padding:2px 14px;border-radius:20px;font-size:13px;font-weight:600;cursor:pointer;transition:0.2s;font-family:inherit}
+.btn-restart:hover{background:rgba(240,200,80,0.12);border-color:rgba(240,200,80,0.2);color:#f0e080}
+</style>
+</head>
+<body>
+<div class="game-wrapper">
+<div class="game-container">
+<div class="header">
+<div class="game-title">⚔️ 侠客行</div>
+<div class="score-display">
+<span>🏆 <span class="score-val" id="playerScore">0</span></span>
+<span style="color:#665544">—</span>
+<span><span class="score-val" id="aiScore">0</span> 🤖</span>
+</div>
+</div>
+<canvas id="gameCanvas" width="900" height="500" tabindex="0"></canvas>
+<div class="controls">
+<div class="key-hints">
+<div class="key-hint"><span class="key">A</span>←</div>
+<div class="key-hint"><span class="key">D</span>→</div>
+<div class="key-hint"><span class="key special">J</span>挥剑</div>
+<div class="key-hint"><span class="key special">K</span>剑气</div>
+<div class="key-hint"><span class="key def">L</span>护盾</div>
+<div class="key-hint"><span class="key ulti">I</span>大招</div>
+<div class="key-hint"><span class="key tele">U</span>瞬移</div>
+</div>
+<div class="status-msg" id="statusMsg">⚡ 江湖</div>
+<button class="btn-restart" id="restartBtn">🔄 重开</button>
+</div>
+</div>
+</div>
+<script>
+// ===== 完整武侠格斗（修复HUD颜色、大招蓄力、集气速度）=====
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const W=900, H=500, GROUND=410, PX=180, AX=720;
+const pScore=document.getElementById('playerScore'), aScore=document.getElementById('aiScore');
+const status=document.getElementById('statusMsg');
+
+let gameOver=false, winner=null, pScoreNum=0, aScoreNum=0;
+let keys={a:false,d:false,l:false};
+let particles=[], texts=[], projectiles=[];
+
+// ----- 动作定义（增加能量获取）-----
+const P_ACT = {
+    slash: {label:'挥剑', dmg:14, cd:380, dur:280, rng:75, angle:1.2, energy:30, icon:'⚔️'},
+    shoot: {label:'剑气', dmg:18, cd:450, dur:200, rng:0, energy:40, icon:'💫'},
+    ultimate: {label:'万剑', dmg:55, cd:0, dur:400, rng:0, energy:0, icon:'⚡'}
+};
+const A_ACT = {
+    slash:{label:'砍', dmg:12, cd:700, dur:350, rng:70, angle:1.0, energy:0, icon:'⚔️'},
+    dodge:{label:'躲', dmg:0, cd:900, dur:320, rng:0, energy:0, icon:'🌀'},
+    charge:{label:'冲', dmg:18, cd:1100, dur:450, rng:120, angle:0.8, energy:0, icon:'💨'},
+    flash:{label:'闪', dmg:0, cd:1300, dur:250, rng:0, energy:0, icon:'✨'},
+    block:{label:'护盾', dmg:0, cd:800, dur:350, rng:0, energy:0, icon:'🛡️'}
+};
+
+// ----- 剑形绘制 -----
+function drawSword(ctx, x, y, angle, length, color1, color2, glowColor, hasHilt=true) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(angle);
+    ctx.shadowBlur=30;
+    ctx.shadowColor=glowColor || 'rgba(200,180,120,0.5)';
+    const grad = ctx.createLinearGradient(0, -4, length, 4);
+    grad.addColorStop(0, color1 || '#e8d8c0');
+    grad.addColorStop(0.5, color2 || '#c8b898');
+    grad.addColorStop(1, color1 || '#b0a080');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.moveTo(0, -3);
+    ctx.lineTo(length, -2);
+    ctx.lineTo(length+4, 0);
+    ctx.lineTo(length, 2);
+    ctx.lineTo(0, 3);
+    ctx.closePath();
+    ctx.fill();
+    if (hasHilt) {
+        ctx.fillStyle = '#c8b060';
+        ctx.shadowBlur=10;
+        ctx.fillRect(4, -6, 4, 12);
+        ctx.fillStyle = '#6a4a2a';
+        ctx.fillRect(-4, -2, 8, 4);
+    }
+    ctx.restore();
+}
+
+// ----- 角色类（前摇逻辑修正）-----
+class Fighter {
+    constructor(x, isPlayer) {
+        this.x=x; this.y=GROUND; this.isPlayer=isPlayer;
+        this.hp=100; this.maxHp=100;
+        this.energy=0; this.maxEnergy=80;
+        this.facing=isPlayer?1:-1;
+        this.dx=0; this.speed=3.5;
+        this.action='idle'; this.timer=0;
+        this.cooldown={};
+        this.invincible=false; this.invTimer=0;
+        this.hitStun=0;
+        this.hasHit=false;
+        this.actMap=isPlayer?P_ACT:A_ACT;
+        for(let k in this.actMap) this.cooldown[k]=0;
+        this.aiDelay=0;
+        this.moveTarget=null;
+        this.isBlocking=false;
+        this.ultimateActive=false;
+        this.ultimateTimer=0;
+        this.teleportCooldown=0;
+        this.capeOffset=0;
+        this.capeSpeed=0.06;
+        this.hitFlash=0;
+        this.mainColor = isPlayer ? '#4a7ab0' : '#b05a4a';
+        this.darkColor = isPlayer ? '#2a4a7a' : '#7a2a1a';
+        this.accentColor = isPlayer ? '#b8a878' : '#a08060';
+        this.skinColor = isPlayer ? '#e8d8b0' : '#e8c8b0';
+        // 大招前摇
+        this.isCastingUltimate = false;
+        this.castTimer = 0;
+        this.castDuration = 500; // 毫秒
+    }
+    isActive() { return this.hp > 0; }
+
+    reset(x) {
+        this.x=x; this.hp=this.maxHp; this.energy=0;
+        this.action='idle'; this.timer=0;
+        this.invincible=false; this.invTimer=0; this.hitStun=0;
+        this.hasHit=false; this.dx=0; this.facing=this.isPlayer?1:-1;
+        this.moveTarget=null; this.aiDelay=0;
+        this.isBlocking=false;
+        this.ultimateActive=false; this.ultimateTimer=0;
+        this.teleportCooldown=0;
+        this.hitFlash=0;
+        this.isCastingUltimate=false;
+        this.castTimer=0;
+        for(let k in this.cooldown) this.cooldown[k]=0;
+    }
+
+    addEnergy(amount) {
+        if(!this.isPlayer) return;
+        this.energy = Math.min(this.maxEnergy, this.energy + amount);
+    }
+    // 加快自动回气（由每秒5点提升到8点）
+    autoEnergy() {
+        if(!this.isPlayer) return;
+        this.energy = Math.min(this.maxEnergy, this.energy + 8);
+    }
+
+    teleport(dir) {
+        if(this.teleportCooldown>0 || this.hitStun>0 || this.isCastingUltimate) return false;
+        const dist = 150;
+        let targetX = this.x + dir * dist;
+        targetX = Math.max(40, Math.min(W-40, targetX));
+        this.x = targetX;
+        this.teleportCooldown = 400;
+        this.invincible = true;
+        this.invTimer = 120;
+        spawnParticles(this.x, this.y-20, '#d4b878', 20);
+        for(let i=0;i<8;i++) {
+            particles.push({
+                x: this.x + (Math.random()-0.5)*30,
+                y: this.y - 20 + (Math.random()-0.5)*30,
+                vx: (Math.random()-0.5)*2,
+                vy: -1 - Math.random()*2,
+                life: 300,
+                maxLife: 300,
+                size: 6+Math.random()*6,
+                color: '#d4b878',
+                decay: 0.98,
+                type: 'trail'
+            });
+        }
+        return true;
+    }
+
+    // 尝试释放大招（含前摇）
+    tryUltimate(target) {
+        if(this.isCastingUltimate) return false;
+        if(this.energy < this.maxEnergy) return false;
+        if(this.hitStun>0 || this.isBlocking) return false;
+        if(this.action!=='idle' && this.action!=='dodge' && this.action!=='flash') return false;
+        // 消耗能量，进入前摇
+        this.energy = 0;
+        this.isCastingUltimate = true;
+        this.castTimer = this.castDuration;
+        this.action = 'ultimate';
+        this.timer = this.castDuration + 200;
+        return true;
+    }
+
+    // 执行大招伤害（仅当castTimer<=0时调用）
+    executeUltimate(target) {
+        if(!target || !target.isActive()) return;
+        const dmg = 55;
+        const dir = this.facing;
+        target.takeDamage(dmg, dir);
+        spawnParticles(target.x, target.y-30, '#ff80d0', 40);
+        spawnParticles(target.x, target.y-30, '#ffaa44', 30);
+        texts.push({x:target.x, y:target.y-100, text:'⚡万剑穿心!', color:'#ff80d0', life:1200, vy:-2});
+        for(let i=0;i<20;i++) {
+            const angle = Math.random()*Math.PI*2;
+            const speed = 3+Math.random()*6;
+            const startX = target.x + (Math.random()-0.5)*120;
+            const startY = target.y - 40 + (Math.random()-0.5)*80;
+            projectiles.push({
+                x: startX, y: startY,
+                vx: Math.cos(angle)*speed,
+                vy: Math.sin(angle)*speed - 0.5,
+                damage: 0,
+                isPlayer: true,
+                life: 500,
+                isEffect: true,
+                color: '#ff80d0',
+                type: 'sword'
+            });
+        }
+        if(target.hp<=0) { 
+            gameOver=true; 
+            winner=this.isPlayer?'player':'ai'; 
+            if(winner==='player'){ pScoreNum++; updateUI(); status.textContent='🎉 你赢了！'; }
+            else { aScoreNum++; updateUI(); status.textContent='😵 人机赢了...'; }
+        }
+    }
+
+    perform(action, dir=0) {
+        if(gameOver || this.hp<=0 || this.hitStun>0) return false;
+        if(this.cooldown[action]>0) return false;
+        if(this.isBlocking) return false;
+        if(this.isCastingUltimate) return false;
+        if(this.action!=='idle' && this.action!=='dodge' && this.action!=='flash' && this.action!=='block') return false;
+        const cfg=this.actMap[action]; if(!cfg) return false;
+
+        this.action=action; this.timer=cfg.dur; this.hasHit=false;
+        this.cooldown[action]=cfg.cd;
+        if(action==='dodge' && this.isPlayer) {
+            const dist=85;
+            const target=this.x + dir*dist;
+            this.moveTarget={from:this.x, to:Math.max(40,Math.min(W-40,target)), progress:0};
+            this.invincible=true; this.invTimer=cfg.dur+60;
+        } else if(action==='charge' && !this.isPlayer) {
+            const target=this.x + this.facing*100;
+            this.moveTarget={from:this.x, to:Math.max(40,Math.min(W-40,target)), progress:0};
+        } else if(action==='flash' && !this.isPlayer) {
+            this.x = Math.max(40, Math.min(W-40, this.x + this.facing*90));
+            this.invincible=true; this.invTimer=cfg.dur+80;
+        } else if(action==='block' && !this.isPlayer) {
+            this.isBlocking = true;
+        } else if(action==='shoot' && this.isPlayer) {
+            const proj = {
+                x: this.x + this.facing*30,
+                y: this.y - 20,
+                vx: this.facing * 10,
+                vy: 0,
+                damage: cfg.dmg,
+                isPlayer: true,
+                life: 800,
+                radius: 12,
+                color: '#60d0ff',
+                type: 'sword'
+            };
+            projectiles.push(proj);
+            spawnParticles(proj.x, proj.y, '#60d0ff', 8);
+        }
+        return true;
+    }
+
+    update(opponent) {
+        if(this.isPlayer && !gameOver) this.autoEnergy();
+        for(let k in this.cooldown) if(this.cooldown[k]>0) this.cooldown[k]-=16.67;
+        if(this.invTimer>0) { this.invTimer-=16.67; if(this.invTimer<=0) this.invincible=false; }
+        if(this.hitStun>0) { this.hitStun-=16.67; if(this.hitStun<0) this.hitStun=0; if(this.hitStun>0) { this.hitFlash=10; 
+            // 受击打断前摇
+            if(this.isCastingUltimate) {
+                this.isCastingUltimate = false;
+                this.castTimer = 0;
+                this.action = 'idle';
+                this.timer = 0;
+            }
+            return; 
+        } }
+        if(this.hitFlash>0) this.hitFlash-=1;
+        if(this.teleportCooldown>0) this.teleportCooldown-=16.67;
+
+        // 处理大招前摇
+        if(this.isCastingUltimate) {
+            this.castTimer -= 16.67;
+            // 前摇期间不移动，可转向
+            if(opponent) this.facing = opponent.x>this.x ? 1 : -1;
+            // 如果蓄力完成
+            if(this.castTimer <= 0) {
+                this.isCastingUltimate = false;
+                this.castTimer = 0;
+                // 执行伤害
+                if(opponent && opponent.isActive()) {
+                    this.executeUltimate(opponent);
+                }
+                this.action = 'idle';
+                this.timer = 0;
+            }
+            // 蓄力期间不执行其他更新（移动）
+            return;
+        }
+
+        // 普通动作更新
+        if(this.action==='block' && !this.isPlayer) {
+            if(this.timer>0) {
+                this.timer-=16.67;
+                if(this.timer<=0) {
+                    this.timer=0;
+                    this.isBlocking=false;
+                    this.action='idle';
+                }
+            }
+        }
+
+        this.capeOffset += this.capeSpeed;
+
+        if(this.timer>0 && this.action!=='block') {
+            this.timer-=16.67;
+            if(this.timer<=0) {
+                this.timer=0;
+                if(this.action==='dodge'||this.action==='charge') this.moveTarget=null;
+                this.action='idle'; this.hasHit=false;
+            } else {
+                if(this.moveTarget) {
+                    const cfg=this.actMap[this.action];
+                    const prog=1-(this.timer/cfg.dur);
+                    this.x = this.moveTarget.from + (this.moveTarget.to - this.moveTarget.from)*prog;
+                    this.x = Math.max(40, Math.min(W-40, this.x));
+                } else {
+                    this.x += this.dx * this.speed;
+                    this.x = Math.max(40, Math.min(W-40, this.x));
+                }
+            }
+        } else if(this.action!=='block') {
+            this.x += this.dx * this.speed;
+            this.x = Math.max(40, Math.min(W-40, this.x));
+        } else {
+            this.x += this.dx * this.speed;
+            this.x = Math.max(40, Math.min(W-40, this.x));
+        }
+        if(opponent) this.facing = opponent.x>this.x ? 1 : -1;
+    }
+
+    getActionConfig(){ return this.actMap[this.action] || {dmg:0,rng:0, angle:0}; }
+    isAttacking(){ return this.action==='slash'||this.action==='charge'||this.action==='shoot'||this.action==='ultimate'; }
+    isDefending(){ return this.action==='dodge'||this.action==='flash'||this.isBlocking; }
+
+    takeDamage(dmg, dir) {
+        if(this.invincible || this.hp<=0) return false;
+        if(this.isBlocking) {
+            spawnParticles(this.x, this.y-20, '#80d0ff', 8);
+            return false;
+        }
+        this.hp -= dmg; if(this.hp<0) this.hp=0;
+        this.hitStun=150;
+        this.hitFlash=12;
+        this.x += dir*15; this.x=Math.max(40, Math.min(W-40, this.x));
+        this.action='idle'; this.timer=0; this.moveTarget=null;
+        if(this.isPlayer) this.isBlocking=false;
+        // 打断前摇
+        if(this.isCastingUltimate) {
+            this.isCastingUltimate = false;
+            this.castTimer = 0;
+        }
+        return true;
+    }
+
+    // ----- 绘制角色（武侠风）-----
+    draw(ctx) {
+        const x=this.x, y=this.y, f=this.facing, isP=this.isPlayer;
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.shadowColor='rgba(0,0,0,0.5)';
+        ctx.shadowBlur=20;
+        ctx.shadowOffsetY=6;
+
+        if(this.hitFlash>0) {
+            ctx.globalAlpha = 0.6 + 0.4*Math.sin(this.hitFlash*0.5);
+        }
+
+        // 大招蓄力特效
+        if(this.isCastingUltimate) {
+            const progress = 1 - (this.castTimer / this.castDuration);
+            ctx.save();
+            ctx.globalAlpha = 0.3 + 0.2*Math.sin(Date.now()/100);
+            ctx.shadowBlur=60;
+            ctx.shadowColor='rgba(255,128,208,0.6)';
+            ctx.fillStyle = 'rgba(255,128,208,0.15)';
+            ctx.beginPath();
+            ctx.arc(0, -20, 50 + 20*progress, 0, Math.PI*2);
+            ctx.fill();
+            ctx.restore();
+            ctx.save();
+            ctx.globalAlpha = 0.5;
+            ctx.strokeStyle = '#ff80d0';
+            ctx.lineWidth = 3;
+            ctx.setLineDash([8, 8]);
+            ctx.shadowBlur=30;
+            ctx.shadowColor='rgba(255,128,208,0.5)';
+            ctx.beginPath();
+            ctx.arc(0, -20, 40 + 10*progress, 0, Math.PI*2);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.restore();
+            ctx.shadowBlur=0;
+            ctx.fillStyle = '#ff80d0';
+            ctx.font = 'bold 20px "华文楷体", sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('⚡ 蓄力中...', 0, -80);
+        }
+
+        // 披风
+        const capeWave = Math.sin(this.capeOffset) * 6;
+        ctx.shadowBlur=12;
+        ctx.shadowColor='rgba(0,0,0,0.3)';
+        const capeColor = isP ? 'rgba(60,100,180,0.6)' : 'rgba(180,80,60,0.6)';
+        ctx.fillStyle = capeColor;
+        ctx.beginPath();
+        ctx.moveTo(-16, -8);
+        ctx.quadraticCurveTo(-28 + f*3, 6 + capeWave, -20 + f*5, 24 + capeWave*0.6);
+        ctx.quadraticCurveTo(-8 + f*2, 18 + capeWave*0.3, 0, 16);
+        ctx.quadraticCurveTo(8 + f*2, 18 + capeWave*0.3, 20 + f*5, 24 + capeWave*0.6);
+        ctx.quadraticCurveTo(28 + f*3, 6 + capeWave, 16, -8);
+        ctx.closePath();
+        ctx.fill();
+
+        // 身体
+        ctx.shadowBlur=16;
+        ctx.shadowColor='rgba(0,0,0,0.4)';
+        const bodyGrad = ctx.createLinearGradient(-18, -42, 18, 10);
+        bodyGrad.addColorStop(0, this.mainColor);
+        bodyGrad.addColorStop(1, this.darkColor);
+        ctx.fillStyle = bodyGrad;
+        ctx.beginPath();
+        ctx.roundRect(-18, -42, 36, 42, 6);
+        ctx.fill();
+        ctx.fillStyle = this.accentColor;
+        ctx.beginPath();
+        ctx.moveTo(-6, -36);
+        ctx.lineTo(0, -28);
+        ctx.lineTo(6, -36);
+        ctx.fill();
+        ctx.fillStyle = isP ? '#c8a040' : '#a08040';
+        ctx.fillRect(-18, -8, 36, 6);
+        ctx.fillRect(-20, -8, 4, 8);
+        ctx.fillRect(16, -8, 4, 8);
+        ctx.fillStyle = isP ? 'rgba(60,100,180,0.4)' : 'rgba(180,80,60,0.4)';
+        ctx.beginPath();
+        ctx.moveTo(-6, -4);
+        ctx.quadraticCurveTo(-12, 8, -8, 16);
+        ctx.quadraticCurveTo(-2, 12, 0, 8);
+        ctx.quadraticCurveTo(2, 12, 8, 16);
+        ctx.quadraticCurveTo(12, 8, 6, -4);
+        ctx.fill();
+
+        // 头部
+        ctx.shadowBlur=12;
+        ctx.shadowColor='rgba(0,0,0,0.2)';
+        ctx.fillStyle = isP ? '#5a4a2a' : '#4a3a1a';
+        ctx.beginPath();
+        ctx.ellipse(0, -44, 26, 8, 0, 0, Math.PI*2);
+        ctx.fill();
+        ctx.fillRect(-24, -46, 48, 4);
+        ctx.beginPath();
+        ctx.moveTo(0, -52);
+        ctx.quadraticCurveTo(-10, -46, -20, -44);
+        ctx.quadraticCurveTo(0, -44, 20, -44);
+        ctx.quadraticCurveTo(10, -46, 0, -52);
+        ctx.fill();
+        const headGrad = ctx.createRadialGradient(-4, -32, 4, 0, -30, 18);
+        headGrad.addColorStop(0, this.skinColor);
+        headGrad.addColorStop(1, '#c0a880');
+        ctx.fillStyle = headGrad;
+        ctx.beginPath();
+        ctx.arc(0, -30, 16, 0, Math.PI*2);
+        ctx.fill();
+        ctx.fillStyle = isP ? '#2a1a0a' : '#1a0a00';
+        ctx.beginPath();
+        ctx.moveTo(-12, -34);
+        ctx.quadraticCurveTo(-18, -18, -16, 2);
+        ctx.quadraticCurveTo(-8, -4, -2, -6);
+        ctx.quadraticCurveTo(0, -8, 2, -6);
+        ctx.quadraticCurveTo(8, -4, 16, 2);
+        ctx.quadraticCurveTo(18, -18, 12, -34);
+        ctx.fill();
+        ctx.shadowBlur=0;
+        const eyeOff = f*6;
+        ctx.fillStyle = '#f0f0f8';
+        ctx.beginPath();
+        ctx.arc(-6 + eyeOff, -32, 4.5, 0, Math.PI*2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(6 + eyeOff, -32, 4.5, 0, Math.PI*2);
+        ctx.fill();
+        ctx.fillStyle = '#1a1a2a';
+        ctx.beginPath();
+        ctx.arc(-5 + eyeOff + f*2, -31, 2.5, 0, Math.PI*2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(7 + eyeOff + f*2, -31, 2.5, 0, Math.PI*2);
+        ctx.fill();
+        ctx.strokeStyle = '#2a1a0a';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(-10 + eyeOff, -38);
+        ctx.lineTo(-3 + eyeOff, -39);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(10 + eyeOff, -38);
+        ctx.lineTo(3 + eyeOff, -39);
+        ctx.stroke();
+        ctx.strokeStyle = '#442a2a';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        if (this.hp < 30) {
+            ctx.arc(eyeOff, -24, 4, 0, Math.PI, true);
+        } else if (this.isAttacking()) {
+            ctx.moveTo(-5 + eyeOff, -24);
+            ctx.lineTo(5 + eyeOff, -24);
+        } else {
+            ctx.arc(eyeOff, -25, 4, 0.1, Math.PI-0.1);
+        }
+        ctx.stroke();
+
+        // 剑
+        ctx.shadowBlur=20;
+        ctx.shadowColor='rgba(200,180,120,0.3)';
+        const act = this.action;
+        const timer = this.timer;
+        const cfg = this.actMap[act];
+        const wl = 34;
+        const wx = 18;
+        const wy = -10;
+
+        ctx.save();
+        ctx.translate(wx, wy);
+        if (act === 'slash' && timer>0 && cfg) {
+            const prog = 1 - (timer/cfg.dur);
+            const angle = -1.0 + prog * 2.0;
+            ctx.rotate(f * angle);
+            ctx.shadowBlur=50;
+            ctx.shadowColor='rgba(200,180,120,0.6)';
+            ctx.fillStyle = 'rgba(240,220,180,0.25)';
+            ctx.beginPath();
+            ctx.arc(15, 0, 30, -0.5, 0.5);
+            ctx.fill();
+            drawSword(ctx, 0, 0, 0, wl, '#e8d8c0', '#c8b898', 'rgba(200,180,120,0.5)', true);
+            if (timer > 100) {
+                ctx.restore();
+                ctx.save();
+                ctx.translate(wx, wy);
+                ctx.rotate(f * angle);
+                ctx.globalAlpha = 0.4;
+                ctx.strokeStyle = 'rgba(240,220,180,0.3)';
+                ctx.lineWidth = 6;
+                ctx.shadowBlur=60;
+                ctx.shadowColor='rgba(240,220,180,0.4)';
+                const arcAngle = prog * 1.6;
+                ctx.beginPath();
+                ctx.arc(0, 0, 45, -0.6 + f*arcAngle, 0.6 + f*arcAngle);
+                ctx.stroke();
+                ctx.restore();
+                ctx.save();
+                ctx.translate(wx, wy);
+            }
+        } else if (act === 'shoot' && timer>0) {
+            ctx.shadowBlur=50;
+            ctx.shadowColor='rgba(80,200,255,0.6)';
+            ctx.fillStyle = 'rgba(80,200,255,0.2)';
+            ctx.beginPath();
+            ctx.arc(20, 0, 20 + 5*Math.sin(Date.now()/100), 0, Math.PI*2);
+            ctx.fill();
+            drawSword(ctx, 0, 0, 0, wl, '#b0e0ff', '#4080ff', 'rgba(80,200,255,0.5)', true);
+        } else if (act === 'ultimate' && timer>0) {
+            ctx.shadowBlur=60;
+            ctx.shadowColor='rgba(255,128,208,0.7)';
+            ctx.fillStyle = 'rgba(255,128,208,0.2)';
+            ctx.beginPath();
+            ctx.arc(0, 0, 35, 0, Math.PI*2);
+            ctx.fill();
+            drawSword(ctx, 0, 0, 0, wl+6, '#ff80d0', '#ff4080', 'rgba(255,128,208,0.8)', true);
+        } else {
+            drawSword(ctx, 0, 0, 0, wl, '#e8d8c0', '#c8b898', 'rgba(200,180,120,0.2)', true);
+        }
+        ctx.restore();
+
+        // 腿
+        ctx.shadowBlur=4;
+        ctx.shadowColor='rgba(0,0,0,0.15)';
+        ctx.fillStyle = isP ? '#2a3a4a' : '#4a2a1a';
+        ctx.fillRect(-14, 6, 8, 18);
+        ctx.fillRect(6, 6, 8, 18);
+        ctx.fillStyle = '#3a2a1a';
+        ctx.fillRect(-16, 20, 10, 6);
+        ctx.fillRect(6, 20, 10, 6);
+
+        // 护盾
+        if (this.isBlocking) {
+            ctx.save();
+            ctx.globalAlpha = 0.6 + 0.2*Math.sin(Date.now()/80);
+            ctx.shadowBlur=50;
+            ctx.shadowColor='rgba(80,200,255,0.7)';
+            ctx.strokeStyle = '#60d0ff';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.arc(0, -20, 48, 0, Math.PI*2);
+            ctx.stroke();
+            ctx.fillStyle = 'rgba(80,200,255,0.1)';
+            ctx.fill();
+            ctx.rotate(Date.now()/3000);
+            ctx.fillStyle = 'rgba(80,200,255,0.2)';
+            ctx.beginPath();
+            ctx.arc(0, -20, 22, 0, Math.PI);
+            ctx.fill();
+            ctx.fillStyle = 'rgba(80,200,255,0.3)';
+            ctx.beginPath();
+            ctx.arc(0, -20, 22, Math.PI, 2*Math.PI);
+            ctx.fill();
+            ctx.fillStyle = '#60d0ff';
+            ctx.beginPath();
+            ctx.arc(0, -20-8, 7, 0, Math.PI*2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(0, -20+8, 7, 0, Math.PI*2);
+            ctx.fill();
+            ctx.restore();
+        }
+
+        // 动作标签
+        if(this.isCastingUltimate) {
+            // 已经在上方显示，此处可省略
+        } else if(this.action!=='idle' && this.timer>0) {
+            const c=this.actMap[this.action];
+            if(c) {
+                ctx.shadowBlur=0;
+                ctx.font='bold 16px "华文楷体", sans-serif';
+                ctx.textAlign='center';
+                ctx.fillStyle='rgba(255,255,255,0.9)';
+                ctx.shadowColor='rgba(0,0,0,0.8)';
+                ctx.shadowBlur=10;
+                ctx.fillText(c.icon+' '+c.label, 0, -58);
+            }
+        }
+        ctx.restore();
+        if(this.hitFlash>0) ctx.globalAlpha = 1;
+    }
+}
+CanvasRenderingContext2D.prototype.roundRect=function(x,y,w,h,r){ if(w<2*r)r=w/2; if(h<2*r)r=h/2; this.moveTo(x+r,y); this.lineTo(x+w-r,y); this.quadraticCurveTo(x+w,y,x+w,y+r); this.lineTo(x+w,y+h-r); this.quadraticCurveTo(x+w,y+h,x+w-r,y+h); this.lineTo(x+r,y+h); this.quadraticCurveTo(x,y+h,x,y+h-r); this.lineTo(x,y+r); this.quadraticCurveTo(x,y,x+r,y); return this; };
+
+const player = new Fighter(PX, true);
+const ai = new Fighter(AX, false);
+
+// ----- 攻击判定（角度限制）-----
+function dist(a,b){ return Math.abs(a.x-b.x); }
+
+function checkAttack(attacker, defender) {
+    if(!attacker.isActive()||!defender.isActive()) return false;
+    if(attacker.hitStun>0||attacker.timer<=0||attacker.hasHit) return false;
+    const cfg=attacker.getActionConfig(); if(cfg.dmg<=0) return false;
+    if(!['slash','charge'].includes(attacker.action)) return false;
+    const dx = defender.x - attacker.x;
+    const dy = (defender.y - 20) - (attacker.y - 20);
+    const dist = Math.sqrt(dx*dx + dy*dy);
+    if(dist > cfg.rng + 20) return false;
+    const angle = Math.atan2(dy, dx);
+    const facingAngle = attacker.facing > 0 ? 0 : Math.PI;
+    let angleDiff = angle - facingAngle;
+    while(angleDiff > Math.PI) angleDiff -= 2*Math.PI;
+    while(angleDiff < -Math.PI) angleDiff += 2*Math.PI;
+    const halfAngle = cfg.angle || 1.0;
+    if(Math.abs(angleDiff) > halfAngle) return false;
+
+    if(defender.isDefending()){
+        if(attacker.action==='charge'&&defender.action==='dodge'){}
+        else if(defender.invincible){ spawnParticles(defender.x,defender.y-30,'#60d0f0',12); return false; }
+        else return false;
+    }
+    let dmg=cfg.dmg;
+    if(attacker.action==='charge'){ const b=1+(1-attacker.timer/cfg.dur)*0.3; dmg=Math.floor(dmg*b); }
+    if(Math.random()<0.15){ dmg=Math.floor(dmg*1.6); spawnParticles(defender.x,defender.y-30,'#ffdd44',20); texts.push({x:defender.x,y:defender.y-80,text:'💥暴击',color:'#ffdd44',life:1000,vy:-1.8}); }
+    const dir = attacker.facing;
+    if(defender.takeDamage(dmg, dir)){
+        attacker.hasHit=true;
+        spawnParticles(defender.x,defender.y-30,'#ff8844',16);
+        texts.push({x:defender.x+(Math.random()-0.5)*20,y:defender.y-50,text:'-'+dmg,color:'#ff6644',life:700,vy:-1.5});
+        if(attacker.isPlayer) attacker.addEnergy(cfg.energy || 30);
+        if(defender.hp<=0){ defender.hp=0; gameOver=true; winner=attacker.isPlayer?'player':'ai'; if(winner==='player'){pScoreNum++; updateUI(); status.textContent='🎉 你赢了！';}else{aScoreNum++; updateUI(); status.textContent='😵 人机赢了...';} spawnParticles(defender.x,defender.y-30,'#ff4444',30); spawnParticles(defender.x,defender.y-30,'#ffaa44',20); }
+        return true;
+    }
+    return false;
+}
+
+// ----- 剑气更新（统一剑形）-----
+function updateProjectiles() {
+    for(let i=projectiles.length-1; i>=0; i--) {
+        const p = projectiles[i];
+        p.x += p.vx;
+        p.y += p.vy;
+        if(p.isEffect) p.life -= 16.67;
+        else p.life -= 16.67;
+        if(p.x<0 || p.x>W || p.y<0 || p.y>H || p.life<=0) {
+            projectiles.splice(i,1);
+            continue;
+        }
+        if(p.isPlayer && p.damage>0 && ai.isActive() && !p.isEffect) {
+            if(Math.abs(p.x - ai.x) < 20 && Math.abs(p.y - (ai.y-20)) < 30) {
+                const dmg = p.damage;
+                const dir = p.vx>0?1:-1;
+                if(ai.takeDamage(dmg, dir)) {
+                    spawnParticles(ai.x, ai.y-30, '#60d0ff', 20);
+                    texts.push({x:ai.x, y:ai.y-50, text:'-'+dmg, color:'#60d0ff', life:700, vy:-1.5});
+                    player.addEnergy(40);
+                    if(ai.hp<=0){ gameOver=true; winner='player'; pScoreNum++; updateUI(); status.textContent='🎉 你赢了！'; spawnParticles(ai.x,ai.y-30,'#ff4444',30); }
+                }
+                projectiles.splice(i,1);
+                continue;
+            }
+        }
+    }
+}
+
+// ----- 粒子、文字 -----
+function spawnParticles(x,y,color,count){ for(let i=0;i<count;i++){ const a=Math.random()*Math.PI*2,s=1+Math.random()*4; particles.push({x:x+(Math.random()-0.5)*16,y:y+(Math.random()-0.5)*16,vx:Math.cos(a)*s,vy:Math.sin(a)*s-1,life:400+Math.random()*300,maxLife:700,size:2+Math.random()*4,color,decay:0.97+Math.random()*0.02}); } }
+function updateParticles(){ for(let i=particles.length-1;i>=0;i--){ const p=particles[i]; p.x+=p.vx; p.y+=p.vy; p.vy+=0.05; p.vx*=p.decay; p.vy*=p.decay; p.life-=16.67; if(p.life<=0) particles.splice(i,1); } }
+function drawParticles(ctx){ for(const p of particles){ const a=Math.max(0,p.life/p.maxLife); ctx.globalAlpha=a*0.8; ctx.shadowBlur=16; ctx.shadowColor=p.color+'40'; ctx.fillStyle=p.color; ctx.beginPath(); ctx.arc(p.x,p.y,p.size*a,0,Math.PI*2); ctx.fill(); } ctx.globalAlpha=1; ctx.shadowBlur=0; }
+function updateTexts(){ for(let i=texts.length-1;i>=0;i--){ const t=texts[i]; t.y+=t.vy; t.life-=16.67; if(t.life<=0) texts.splice(i,1); } }
+function drawTexts(ctx){ for(const t of texts){ const a=Math.min(1,t.life/300); ctx.globalAlpha=a; ctx.shadowBlur=16; ctx.shadowColor='rgba(0,0,0,0.5)'; ctx.font='bold 26px "华文楷体", sans-serif'; ctx.textAlign='center'; ctx.fillStyle=t.color; ctx.fillText(t.text,t.x,t.y); } ctx.globalAlpha=1; ctx.shadowBlur=0; }
+
+// ----- AI（强化护盾、瞬移、大招）-----
+function updateAI() {
+    if(gameOver || ai.hp<=0) return;
+    if(ai.aiDelay>0){ ai.aiDelay-=16.67; return; }
+    if(ai.hitStun>0 || ai.timer>0){ ai.dx=0; return; }
+    // 检查是否可释放大招
+    if(ai.energy >= ai.maxEnergy && !ai.isCastingUltimate) {
+        if(Math.random() < 0.2) {
+            if(ai.tryUltimate(player)) {
+                ai.aiDelay = 300;
+                return;
+            }
+        }
+    }
+    const d=dist(player, ai);
+    const rand=Math.random();
+    const mistake=0.22 + (aScoreNum/10)*0.03;
+    const playerAtk=player.isAttacking() && player.timer>100;
+    const playerShoot = player.action==='shoot' && player.timer>0;
+    const playerUlt = player.isCastingUltimate || player.action==='ultimate';
+    const playerDef=player.isDefending();
+    const ideal=120 + Math.random()*50;
+
+    if(d<ideal-30) ai.dx = -ai.facing;
+    else if(d>ideal+30) ai.dx = ai.facing;
+    else ai.dx = 0;
+
+    let action='idle';
+    if(playerUlt || playerShoot) {
+        if(rand < 0.45) action = 'block';
+        else if(rand < 0.70) action = 'flash';
+        else if(rand < 0.85) action = 'dodge';
+        else action = 'idle';
+    } else if(playerAtk && d<120) {
+        if(rand < 0.25) action = 'block';
+        else if(rand < 0.50) action = 'flash';
+        else if(rand < 0.70) action = 'dodge';
+        else if(rand < 0.85 && d<100) action = 'slash';
+        else action = 'idle';
+    } else if(playerDef && d<150) {
+        if(rand < 0.30) action = 'charge';
+        else if(rand < 0.55) action = 'slash';
+        else if(rand < 0.75) action = 'block';
+        else action = 'idle';
+    } else {
+        if(d<70){
+            if(rand < 0.35) action = 'slash';
+            else if(rand < 0.55) action = 'dodge';
+            else if(rand < 0.70) action = 'block';
+            else if(rand < 0.85) action = 'flash';
+            else action = 'idle';
+        } else if(d<150){
+            if(rand < 0.30) action = 'charge';
+            else if(rand < 0.50) action = 'slash';
+            else if(rand < 0.65) action = 'dodge';
+            else if(rand < 0.80) action = 'block';
+            else action = 'idle';
+        } else {
+            if(rand < 0.35) action = 'charge';
+            else if(rand < 0.55) action = 'flash';
+            else if(rand < 0.75) action = 'block';
+            else action = 'idle';
+        }
+    }
+    if(Math.random()<mistake){
+        const acts=['idle','slash','dodge','charge','flash','block'];
+        action=acts[Math.floor(Math.random()*acts.length)];
+    }
+    if(ai.hp<30 && Math.random()<0.5) action=(d<150)?'charge':'flash';
+    if(action!=='idle'){
+        if(ai.perform(action)) ai.aiDelay=150+Math.random()*150;
+    } else {
+        ai.aiDelay=80+Math.random()*100;
+    }
+}
+
+function updateUI(){ pScore.textContent=pScoreNum; aScore.textContent=aScoreNum; }
+
+function resetGame(){
+    gameOver=false; winner=null;
+    player.reset(PX); ai.reset(AX);
+    particles=[]; texts=[]; projectiles=[];
+    status.textContent='⚡ 江湖再起！';
+    updateUI();
+    for(let k in player.cooldown) player.cooldown[k]=0;
+    for(let k in ai.cooldown) ai.cooldown[k]=0;
+    ai.aiDelay=300+Math.random()*300;
+    keys={a:false,d:false,l:false};
+}
+
+// ----- 武侠背景 -----
+function drawBg(ctx){
+    ctx.save();
+    const skyGrad = ctx.createLinearGradient(0,0,0,GROUND);
+    skyGrad.addColorStop(0, '#b8c8d8');
+    skyGrad.addColorStop(0.3, '#d4d8c8');
+    skyGrad.addColorStop(0.7, '#e8e0d0');
+    skyGrad.addColorStop(1, '#c8b8a0');
+    ctx.fillStyle = skyGrad;
+    ctx.fillRect(0,0,W,GROUND);
+
+    ctx.shadowBlur=0;
+    ctx.fillStyle = 'rgba(80,90,100,0.3)';
+    ctx.beginPath();
+    ctx.moveTo(0, GROUND-60);
+    ctx.quadraticCurveTo(100, GROUND-140, 200, GROUND-80);
+    ctx.quadraticCurveTo(300, GROUND-170, 400, GROUND-90);
+    ctx.quadraticCurveTo(500, GROUND-200, 600, GROUND-100);
+    ctx.quadraticCurveTo(700, GROUND-160, 800, GROUND-70);
+    ctx.quadraticCurveTo(880, GROUND-130, 900, GROUND-50);
+    ctx.lineTo(900, GROUND);
+    ctx.lineTo(0, GROUND);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = 'rgba(60,70,80,0.25)';
+    ctx.beginPath();
+    ctx.moveTo(0, GROUND-30);
+    ctx.quadraticCurveTo(150, GROUND-100, 300, GROUND-40);
+    ctx.quadraticCurveTo(450, GROUND-120, 600, GROUND-50);
+    ctx.quadraticCurveTo(750, GROUND-90, 900, GROUND-30);
+    ctx.lineTo(900, GROUND);
+    ctx.lineTo(0, GROUND);
+    ctx.closePath();
+    ctx.fill();
+
+    function drawBamboo(x, h, w, alpha) {
+        ctx.fillStyle = `rgba(40,70,40,${alpha})`;
+        ctx.shadowBlur=0;
+        for(let i=0;i<5;i++) {
+            const segH = h/6;
+            ctx.fillRect(x-2, GROUND - h + i*segH, 4, segH-2);
+            ctx.fillRect(x-2, GROUND - h + i*segH, 6, 2);
+        }
+        ctx.fillStyle = `rgba(30,80,30,${alpha})`;
+        for(let i=0;i<3;i++) {
+            const yOff = GROUND - h + 10 + i*20;
+            ctx.beginPath();
+            ctx.ellipse(x-8, yOff, 10, 4, -0.3, 0, Math.PI*2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.ellipse(x+8, yOff-4, 10, 4, 0.3, 0, Math.PI*2);
+            ctx.fill();
+        }
+    }
+    drawBamboo(70, 120, 4, 0.4);
+    drawBamboo(120, 160, 5, 0.3);
+    drawBamboo(160, 100, 4, 0.35);
+    drawBamboo(750, 140, 5, 0.4);
+    drawBamboo(800, 100, 4, 0.3);
+    drawBamboo(840, 170, 6, 0.35);
+
+    const groundGrad = ctx.createLinearGradient(0,GROUND,0,H);
+    groundGrad.addColorStop(0, '#8a9a7a');
+    groundGrad.addColorStop(0.3, '#6a7a5a');
+    groundGrad.addColorStop(1, '#4a5a3a');
+    ctx.fillStyle = groundGrad;
+    ctx.fillRect(0,GROUND,W,H-GROUND);
+
+    ctx.strokeStyle = 'rgba(60,80,50,0.15)';
+    ctx.lineWidth = 1;
+    for(let i=0;i<W;i+=8) {
+        ctx.beginPath();
+        ctx.moveTo(i, GROUND);
+        ctx.lineTo(i+3, GROUND-5);
+        ctx.stroke();
+    }
+
+    const fog = ctx.createRadialGradient(W/2, GROUND-40, 20, W/2, GROUND-20, 300);
+    fog.addColorStop(0, 'rgba(200,210,200,0.15)');
+    fog.addColorStop(1, 'rgba(200,210,200,0)');
+    ctx.fillStyle = fog;
+    ctx.fillRect(0,GROUND-100,W,200);
+
+    ctx.shadowBlur=20;
+    ctx.shadowColor='rgba(0,0,0,0.1)';
+    ctx.strokeStyle = 'rgba(180,170,150,0.1)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(W/2, GROUND-10, 30, 0, Math.PI*2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(W/2, GROUND-10, 20, 0, Math.PI);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(180,170,150,0.05)';
+    ctx.beginPath();
+    ctx.arc(W/2, GROUND-10, 20, Math.PI, 2*Math.PI);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(180,170,150,0.08)';
+    ctx.beginPath();
+    ctx.arc(W/2, GROUND-10-6, 6, 0, Math.PI*2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(W/2, GROUND-10+6, 6, 0, Math.PI*2);
+    ctx.fill();
+    ctx.restore();
+}
+
+// ===== 修正HUD：血条白色背景+红色前景；集气条白色背景+蓝色前景 =====
+function drawHUD(ctx) {
+    const pad = 16;
+    const barW = 160;
+    const barH = 14;
+    const yOff = 14;
+    const gap = 8;
+
+    // ---- 玩家 ----
+    const hpX = pad + 58;
+    const hpY = yOff;
+    // 血条背景（白色）
+    ctx.fillStyle = '#ffffff';
+    ctx.shadowBlur = 0;
+    ctx.roundRect(hpX-1, hpY-1, barW+2, barH+2, 4);
+    ctx.fill();
+    // 血条前景（红色）
+    const hpR = player.hp / player.maxHp;
+    if (hpR > 0) {
+        ctx.fillStyle = '#ff0000';
+        ctx.shadowBlur = 6;
+        ctx.shadowColor = 'rgba(255,0,0,0.3)';
+        ctx.roundRect(hpX, hpY, barW * hpR, barH, 3);
+        ctx.fill();
+    }
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 1;
+    ctx.roundRect(hpX-1, hpY-1, barW+2, barH+2, 4);
+    ctx.stroke();
+    // 文字
+    ctx.fillStyle = '#000000';
+    ctx.font = 'bold 10px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(Math.floor(player.hp)+'/'+player.maxHp, hpX + barW/2, hpY + barH/2);
+
+    // 集气条
+    const enY = hpY + barH + gap;
+    const enX = hpX;
+    // 背景（白色）
+    ctx.fillStyle = '#ffffff';
+    ctx.shadowBlur = 0;
+    ctx.roundRect(enX-1, enY-1, barW+2, 10+2, 3);
+    ctx.fill();
+    // 前景（蓝色）
+    const enR = player.energy / player.maxEnergy;
+    if (enR > 0) {
+        ctx.fillStyle = '#0066ff';
+        ctx.shadowBlur = 6;
+        ctx.shadowColor = 'rgba(0,100,255,0.3)';
+        ctx.roundRect(enX, enY, barW * enR, 10, 2);
+        ctx.fill();
+    }
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 1;
+    ctx.roundRect(enX-1, enY-1, barW+2, 10+2, 3);
+    ctx.stroke();
+    ctx.fillStyle = '#000000';
+    ctx.font = 'bold 9px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(Math.floor(player.energy)+'/'+player.maxEnergy, enX + barW/2, enY + 5);
+
+    // 名字和标签
+    ctx.fillStyle = '#60b0ff';
+    ctx.font = 'bold 14px "华文楷体", sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText('🧑 侠客', pad, hpY-2);
+    ctx.fillStyle = '#ff3333';
+    ctx.font = 'bold 11px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText('HP', pad+42, hpY-2);
+    ctx.fillStyle = '#60d0ff';
+    ctx.font = 'bold 11px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText('气', pad+42, enY-2);
+
+    // 大招就绪提示
+    if(player.energy >= player.maxEnergy) {
+        ctx.fillStyle = '#ffcc44';
+        ctx.font = 'bold 10px sans-serif';
+        ctx.textAlign = 'left';
+        ctx.fillText('⚡ 大招就绪', enX + barW + 6, enY + 5);
+    }
+
+    // ---- AI ----
+    const aiX = W - pad - barW - 58;
+    const aiHpX = aiX + 26;
+    const aiHpY = yOff;
+    // 背景（白色）
+    ctx.fillStyle = '#ffffff';
+    ctx.shadowBlur = 0;
+    ctx.roundRect(aiHpX-1, aiHpY-1, barW+2, barH+2, 4);
+    ctx.fill();
+    const aiHpR = ai.hp / ai.maxHp;
+    if (aiHpR > 0) {
+        ctx.fillStyle = '#ff0000';
+        ctx.shadowBlur = 6;
+        ctx.shadowColor = 'rgba(255,0,0,0.3)';
+        ctx.roundRect(aiHpX, aiHpY, barW * aiHpR, barH, 3);
+        ctx.fill();
+    }
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 1;
+    ctx.roundRect(aiHpX-1, aiHpY-1, barW+2, barH+2, 4);
+    ctx.stroke();
+    ctx.fillStyle = '#000000';
+    ctx.font = 'bold 10px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(Math.floor(ai.hp)+'/'+ai.maxHp, aiHpX + barW/2, aiHpY + barH/2);
+
+    // AI名字和标签
+    ctx.fillStyle = '#ff6a5a';
+    ctx.font = 'bold 14px "华文楷体", sans-serif';
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText('🤖 剑客', W-pad, aiHpY-2);
+    ctx.fillStyle = '#ff3333';
+    ctx.font = 'bold 11px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText('HP', aiX+6, aiHpY-2);
+}
+
+// ----- 主循环 -----
+function loop(){
+    if(!gameOver){
+        player.dx = (keys.d?1:0) + (keys.a?-1:0);
+        player.update(ai);
+        ai.update(player);
+        updateAI();
+        if(player.isCastingUltimate) {
+            // 蓄力中不做攻击
+        }
+        if(player.isAttacking() && player.isActive()) checkAttack(player, ai);
+        if(ai.isAttacking() && ai.isActive()) checkAttack(ai, player);
+        updateProjectiles();
+        if(!gameOver){
+            let t='';
+            if(player.isCastingUltimate) t+='玩家: ⚡ 万剑蓄力';
+            else if(player.action!=='idle' && player.timer>0){ const c=player.actMap[player.action]; if(c) t+='玩家: '+c.icon+c.label; }
+            if(ai.isCastingUltimate) t+=(t?' | ':'')+'人机: ⚡ 万剑蓄力';
+            else if(ai.action!=='idle' && ai.timer>0){ const c=ai.actMap[ai.action]; if(c) t+=(t?' | ':'')+'人机: '+c.icon+c.label; }
+            status.textContent = t || '⚡ 江湖对峙...';
+        }
+    }
+    updateParticles(); updateTexts();
+    ctx.clearRect(0,0,W,H);
+    drawBg(ctx);
+    drawHUD(ctx);
+    if(player.x < ai.x){ player.draw(ctx); ai.draw(ctx); } else { ai.draw(ctx); player.draw(ctx); }
+
+    // 剑气
+    for(const p of projectiles) {
+        if(p.isEffect) {
+            ctx.save();
+            ctx.globalAlpha = 0.8;
+            ctx.shadowBlur=30;
+            ctx.shadowColor='rgba(255,128,208,0.6)';
+            const angle = Math.atan2(p.vy, p.vx);
+            drawSword(ctx, p.x, p.y, angle, 24, '#ff80d0', '#ff4080', 'rgba(255,128,208,0.6)', false);
+            ctx.restore();
+            continue;
+        }
+        if(p.type==='sword') {
+            ctx.save();
+            ctx.shadowBlur=40;
+            ctx.shadowColor='rgba(80,200,255,0.6)';
+            const angle = Math.atan2(p.vy, p.vx);
+            drawSword(ctx, p.x, p.y, angle, 30, '#b0e0ff', '#4080ff', 'rgba(80,200,255,0.8)', true);
+            ctx.restore();
+            continue;
+        }
+        ctx.save();
+        ctx.shadowBlur=30;
+        ctx.shadowColor='rgba(80,200,255,0.5)';
+        const grad=ctx.createRadialGradient(p.x-4, p.y-4, 2, p.x, p.y, 14);
+        grad.addColorStop(0,'#b0e0ff');
+        grad.addColorStop(1,'#4080ff');
+        ctx.fillStyle=grad;
+        ctx.beginPath(); ctx.arc(p.x, p.y, 12, 0, Math.PI*2); ctx.fill();
+        ctx.restore();
+    }
+
+    drawParticles(ctx); drawTexts(ctx);
+    if(gameOver){
+        ctx.fillStyle='rgba(0,0,0,0.4)'; ctx.fillRect(0,0,W,H);
+        ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.shadowBlur=30; ctx.shadowColor='rgba(0,0,0,0.8)';
+        const msg=winner==='player'?'🏆 胜利！':'💀 败北...';
+        const sub=winner==='player'?'你击败了剑客！':'再接再厉！';
+        ctx.font='bold 50px "华文楷体", sans-serif'; ctx.fillStyle=winner==='player'?'#f0d080':'#f06050'; ctx.fillText(msg,W/2,H/2-20);
+        ctx.font='22px "华文楷体", sans-serif'; ctx.fillStyle='rgba(255,255,255,0.6)'; ctx.fillText(sub,W/2,H/2+40);
+        ctx.shadowBlur=0; ctx.font='16px "华文楷体", sans-serif'; ctx.fillStyle='rgba(255,255,255,0.3)'; ctx.fillText('点击「重开」再战',W/2,H/2+85);
+        if(winner==='player'){ const t=Date.now()/300; for(let i=0;i<8;i++){ const a=t+i*Math.PI/4; const r=70+Math.sin(t*1.5+i)*20; const x=W/2+Math.cos(a)*r, y=H/2-20+Math.sin(a)*r*0.4; ctx.fillStyle=`rgba(255,220,80,${0.06+0.04*Math.sin(t+i)})`; ctx.shadowBlur=50; ctx.shadowColor='rgba(255,220,80,0.2)'; ctx.beginPath(); ctx.arc(x,y,12+Math.sin(t*2+i)*4,0,Math.PI*2); ctx.fill(); } }
+        ctx.shadowBlur=0;
+    }
+    ctx.fillStyle='rgba(255,255,255,0.06)'; ctx.font='13px "华文楷体", sans-serif'; ctx.textAlign='center'; ctx.fillText('A/D移动 | J挥剑 | K剑气 | L护盾(长按) | I大招(满气) | U瞬移', W/2, H-12);
+    requestAnimationFrame(loop);
+}
+
+// 键盘事件
+document.addEventListener('keydown', (e)=>{
+    const key=e.key.toLowerCase();
+    if(key==='a'||key==='d'){ e.preventDefault(); keys[key]=true; }
+    if(key==='l'){ e.preventDefault(); keys.l=true; player.isBlocking=true; }
+    if(key==='j' && !gameOver && player.isActive() && player.hitStun<=0 && !player.isBlocking && !player.isCastingUltimate){ e.preventDefault(); player.perform('slash'); }
+    if(key==='k' && !gameOver && player.isActive() && player.hitStun<=0 && !player.isBlocking && !player.isCastingUltimate){ e.preventDefault(); player.perform('shoot'); }
+    if(key==='i' && !gameOver && player.isActive() && player.hitStun<=0 && !player.isBlocking && !player.isCastingUltimate){
+        e.preventDefault();
+        player.tryUltimate(ai);
+    }
+    if(key==='u' && !gameOver && player.isActive() && player.hitStun<=0 && !player.isCastingUltimate){
+        e.preventDefault();
+        let dir = 0;
+        if(keys.a) dir = -1;
+        else if(keys.d) dir = 1;
+        else dir = player.facing;
+        player.teleport(dir);
+    }
+});
+document.addEventListener('keyup', (e)=>{
+    const key=e.key.toLowerCase();
+    if(key==='a'||key==='d'){ e.preventDefault(); keys[key]=false; }
+    if(key==='l'){ e.preventDefault(); keys.l=false; player.isBlocking=false; }
+});
+
+document.getElementById('restartBtn').addEventListener('click', resetGame);
+
+canvas.focus();
+canvas.addEventListener('click', ()=>canvas.focus());
+
+updateUI();
+status.textContent='⚡ 武侠世界：A/D移动，J挥剑，K剑气，L护盾(长按)，I大招(满气)，U瞬移';
+ai.aiDelay=300+Math.random()*300;
+loop();
+
+function resizeCanvas(){ const w=canvas.parentElement.clientWidth-4; if(w<900){ canvas.style.width=w+'px'; canvas.style.height=(w*500/900)+'px'; } else { canvas.style.width=''; canvas.style.height=''; } }
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+</script>
+</body>
+</html>
